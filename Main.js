@@ -18,6 +18,8 @@ let cutsceens = {
 }
 */
 
+const debug = false;
+
 let flags = {
     root:{
         valid:false,
@@ -33,6 +35,39 @@ let fileExplorer = {
 
 let fileEditor = {
     pointer:null,
+    default:"JSPOS_TXT",
+    current:"JSPOS_TXT",
+    editors:{
+        JSPOS_TXT:(c) => {
+            //by the time we get here, fileEditor.pointer has the file we are editing
+            //and thats all we need
+            console.log(fileEditor.pointer);
+            let exit = false;
+            let FILE = null;
+            fileEditor.pointer.getFile().then((result) => {
+                FILE = result;
+            },(e) => {
+                messageError("could not grab file");
+                exit = true;
+                return;
+            });
+            //we have a File() object in FILE of the file we want to edit
+            let WRITER = null;
+            fileEditor.pointer.createWritable().then((result) => {
+                WRITER = result;
+            },(e) => {
+                messageError("failed to make a file writer");
+                exit = true;
+                return;
+            });
+            if (exit) {
+                return;
+            }
+            //we now have the FILE and the WRITER!
+            message("JSPOS_TXT is still a work in progress...");
+            WRITER.close();
+        }
+    }
 }
 
 let commands = {
@@ -40,12 +75,35 @@ let commands = {
         run:(c) => {
             if (c.split(' ').length > 1 && c.split(' ')[1] != '') {
                 let a = c.substring(1 + c.indexOf(' '));
-                message(a + (a.length<Math.floor((window.innerWidth-2)/8) ? '\u00A0':''));
-            } else {
-                
+                messageColors(a);//+ (a.length<Math.floor((window.innerWidth-2)/8) ? '\u00A0':''));
             }
         },
-        hlp:() => {message("say *anything");message("prints whatever comes after 'say '")}
+        hlp:() => {
+            message("say *anything");
+            message("prints everything after 'say '");
+            message("but you can add colored text by using the format:");
+            message("[normal text]`[color]`[colored text]`[normal text]");
+            message("for example: say `crimson`crimson text` is cool, but `#FF0000`this is red`, will print:");
+            messageColors("`crimson`crimson text` is cool, but `#FF0000`this is red`");
+        }
+    },
+    
+    verbalize:{
+        run:(c) => {
+            if (debug) {
+                if (c.split(' ').length > 1 && c.split(' ')[1] != '') {
+                    let a = c.substring(1 + c.indexOf(' '));
+                    message(a + (a.length<Math.floor((window.innerWidth-2)/8) ? '\u00A0':''));
+                }
+            } else {
+                messageError("this command is currently dissabled");
+            }
+        },
+        hlp:() => {
+            message("verbalize *innerHTML")
+            message("pushes everything after 'verbalize ' into the first terminal line as innerHTML");
+            message("this is a debug command, and is currently " + (debug ? 'enabled' : 'disabled'));
+        }
     },
     
     
@@ -64,7 +122,11 @@ let commands = {
                 messageError("that is not valid");
             }
         },
-        hlp:() => {message("help ?command");message("lists all commands, optionaly prints help message for specific command")}
+        hlp:() => {
+            message("help ?command");
+            message("lists all commands, optionaly prints help message for specific command");
+            message("view the <a style='margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> for more info on JSPOS");
+        }
     },
     
     
@@ -120,7 +182,7 @@ let commands = {
                     message("<p style='margin:0px;display:inline;text-decoration:underline;'>"+fileExplorer.current.name+"</p>");
                     for await (let entry of fileExplorer.current.values()) {
                         if (entry.kind == "directory") {
-                            message("<p style='color:lightblue;margin:0px;display:inline;'>"+entry.name + "</p>");
+                            messageColors("`lightblue`"+entry.name+"`");
                         } else {
                             message(entry.name);
                         }
@@ -128,7 +190,7 @@ let commands = {
                 }
                 a();
             } else {
-                messageError("no root file selected");
+                messageError("no root folder selected");
                 message('try the command<p style="color:white;margin:0px;display:inline;"> root</p>');
             }
         },
@@ -175,12 +237,13 @@ let commands = {
                     messageError("invalid arguments");
                 }
             } else {
-                messageError("no root file selected");
+                messageError("no root folder selected");
                 message('try the command<p style="color:white;margin:0px;display:inline;"> root</p>');
             }
         },
         hlp:() => {
-            
+            message("cd ~|..|[sub-directory name]");
+            message("changes your current directory");
         }
     },
     
@@ -188,31 +251,28 @@ let commands = {
     view:{
         run:(c) => {
             if (!flags.root.valid) {
-                messageError("no root file selected");
+                messageError("no root folder selected");
                 message('try the command<p style="color:white;margin:0px;display:inline;"> root</p>');
             } else {
-                //needs to display the contents of a file, in specific format? or as text?
-                //if the file is a .txt file then view the text [ ]
-                //if its an image file, throw an error? or maybe do some cool fancy stuff? [ ]
-                //if the file is an audio file... maybe play it? [ ]
-                let a = c.substring(1 + c.indexOf(' '));
-                fileExplorer.current.getFileHandle(a).then((result) => {
+                fileExplorer.current.getFileHandle(c.substring(1 + c.indexOf(' '))).then((result) => {
                     //found file
                     result.getFile().then((rslt) => {
                         rslt.text().then((txt) => {
                             //text file viewer!!
                             let txtArr = txt.split('\n');
-                            commands.clear.run("clear");
                             let page = 1;
                             let pageMax = Math.ceil(txtArr.length/lineMax);
-                            for (let i = 0; i < lineMax; i++) {
-                                if (i < txtArr.length) {
-                                    message(txtArr[((page-1) * lineMax) + i]);
-                                } else {
-                                    message("");
+                            let viewPage = () => {
+                                commands.clear.run("clear");
+                                for (let i = 0; i < lineMax; i++) {
+                                    if (((page-1) * lineMax) + i < txtArr.length) {
+                                        message(txtArr[((page-1) * lineMax) + i]);
+                                    } else {
+                                        message("");
+                                    }
                                 }
-                            }
-                            
+                            };
+                            viewPage();
                             let keepGoing = true;
                             let busy = false;
                             loop();
@@ -222,35 +282,17 @@ let commands = {
                                     if (!busy) {
                                         busy = true;
                                         query("page " + page + "/" + pageMax + " commands: prev,next,stop",(answer) => {
-                                            
                                             if (answer == 'stop') {
                                                 keepGoing = false;
                                                 message("stopping");
                                             } else if (answer == 'next') {
-                                                if (page < pageMax) {
-                                                    page += 1;
-                                                }
-                                                commands.clear.run("clear");
-                                                for (let i = 0; i < lineMax; i++) {
-                                                    if (((page-1) * lineMax) + i < txtArr.length) {
-                                                        message(txtArr[((page-1) * lineMax) + i]);
-                                                    } else {
-                                                        message("");
-                                                    }
-                                                }
-                                                //message(keepGoing);
+                                                page += page<pageMax ? 1 : 0;
+                                                viewPage();
                                             } else if (answer == 'prev') {
-                                                if (page > 1) {
-                                                    page -= 1;
-                                                }
-                                                commands.clear.run("clear");
-                                                for (let i = 0; i < lineMax; i++) {
-                                                    if (((page-1) * lineMax) + i < txtArr.length) {
-                                                        message(txtArr[((page-1) * lineMax) + i]);
-                                                    } else {
-                                                        message("");
-                                                    }
-                                                }
+                                                page -= page>1 ? 1 : 0;
+                                                viewPage();
+                                            } else {
+                                                viewPage();
                                             }
                                             busy = false;
                                         })
@@ -260,8 +302,6 @@ let commands = {
                                     return;
                                 }
                             }
-                            
-                            console.log(txtArr);
                         },() => {
                             messageError("failed to get text");
                         });
@@ -269,15 +309,104 @@ let commands = {
                         messageError("could not grab file");
                     });
                 },() => {
-                    //did not find file
                     messageError("could not find file: " + c.split(' ')[1]);
                 });
+            }
+        },
+        hlp:() => {
+            message("view [file name]");
+            message("opens up and views the specified file as text information");
+        }
+    },
+    
+    mkdir:{
+        run:(c) => {
+            if (flags.root.valid) {
+                if (!(c.indexOf(' ')+1 >= c.length)) {
+                    fileExplorer.current.getDirectoryHandle(c.substring(c.indexOf(' ') + 1),{create:true}).then((result) => {
+                        message("directory " + c.substring(c.indexOf(' ') + 1) + " was made or already exists");
+                    },(e) => {
+                        messageError("failed to create directory");
+                        messageError(e);
+                    });
+                } else {
+                    messageError("invalid arguments");
+                }
+            } else {
+                messageError("no root folder selected");
+                messageColors("try the command `white`root`");
+            }
+        },
+        hlp:() => {
+            message("mkdir *directory_name");
+            message("makes a new directory (if it doesn't already exist)");
+        }
+    },
+    
+    mkfile:{
+        run:(c) => {
+            if (flags.root.valid) {
+                fileExplorer.current.getFileHandle(c.substring(c.indexOf(' ') + 1),{create:true}).then((result) => {
+                    message("file " + c.substring(c.indexOf(' ') + 1) + " was made or already exists");
+                },(e) => {
+                    messageError("failed to create directory");
+                    messageError(e);
+                });
+            } else {
+                messageError("no root folder selected");
+                message('try the command<p style="color:white;margin:0px;display:inline;"> root</p>');
             }
         },
         hlp:() => {
             
         }
     },
+    
+    del:{
+        run:(c) => {
+            if (flags.root.valid) {
+                fileExplorer.current.removeEntry(c.substring(c.indexOf(' ',c.indexOf(' ')+1)+1),{ recursive:c.split(' ')[1]=='yes'}).then((result) => {
+                    messageColors("deleted subdirectory|file `lightblue`"+c.substring(c.indexOf(' ',c.indexOf(' ')+1)+1)+"`");
+                },(e) => {
+                    if (e.name == "InvalidModificationError") {
+                        messageError("cannot delete directory, recursive removal disabled");
+                    } else {
+                        messageError("could not find file or directory");
+                    }
+                });
+                
+            } else {
+                messageError("no root folder selected");
+                messageColors("try the command `white`root`");
+            }
+        },
+        hlp:() => {
+            message("del yes|no *directory or file name");
+            message("deletes the corrisponding directory or file");
+            message("if you specify 'no' then this command wont delete recursivly");
+        }
+    },
+    
+    edit:{
+        run:(c) => {
+            if (flags.root.valid) {
+                fileExplorer.current.getFileHandle(c.substring(c.indexOf(' ')+1)).then((result) => {
+                    fileEditor.pointer = result;
+                    fileEditor.editors[fileEditor.current](c);
+                },(e) => {
+                    messageError("could not find that file");
+                });
+            } else {
+                messageError("no root folder selected");
+                messageColors("try the command `white`root`");
+            }
+        },
+        hlp:() => {
+            message("edit *filename");
+            message("opens your JSPOS file editor (defaults to JSPOS_TXT editor)");
+            message("see the <a style='margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> to get more info on custom editors");
+        }
+    }
 }
 
 //preload function
@@ -291,7 +420,7 @@ user.style.width = window.innerWidth - 24 - 8 + "px";
     
     for (let i = 0; i < (window.innerHeight/17)-2;i++) {
         let a = document.createElement("p");
-        a.style = "font-family:'Courier New', monospace;font-size:14px;color:lime";
+        a.style = "font-family:'Courier New', monospace;font-size:14px;";
         a.id = "line"+i;
         a.innerText = "\u00A0";
         a.style.marginTop = "0px";
@@ -331,13 +460,13 @@ shifts all the terminal lines down one
 and inserts the message [str] into the first line
 */
 function message(str) {
-    str = str + '\u00A0'
+    //str = str + '\u00A0';
     for (let i = 0; i <= lineMax; i++) {
         let ref = document.getElementById("line"+i);
         if (i<lineMax) {
             ref.innerHTML = document.getElementById("line"+(i+1)).innerHTML;
         } else {
-            ref.innerHTML = str;
+            ref.innerHTML = str + '\u00A0';
         }
         if (ref.innerText.length>=Math.floor((window.innerWidth-2)/8)) {
             ref.innerText = ref.innerText.substring(0,Math.floor((window.innerWidth-2)/8));
@@ -346,12 +475,40 @@ function message(str) {
 }
 /*
 like message but it does this:
-\red\words that are red\normal text\white\white text\
+`red`words that are red`normal text`white`white text`this is a forward slash: /
 becomes:
 <p style="color:red;margin:0px;display:inline">words that are red</p>normal text<p style="color:white;margin:0px;display:inline">white text</p>
+
+the format for this is:
+[normal text]`[color]`[your colored text]`[normal text]
 */
 function messageColors(str) {
-    
+    let index = 0;
+    let color = '';
+    let depth = 0;
+    let out = str.substring(0,str.indexOf('`'));
+    while (str.indexOf('`',index)>=0) {
+        let curI = str.indexOf('`',index);
+        if (!(str.indexOf('`',curI+1) < 0)) {
+            if (depth == 0) {
+                color = str.substring(curI+1,str.indexOf('`',curI+1));
+                depth += 1;
+            } else if (depth == 1) {
+                out = out + "<p style='margin:0px;display:inline;color:"+color+";'>"+str.substring(curI+1,str.indexOf('`',curI+1))+"</p>";
+                depth += 1
+            } else if (depth == 2) {
+                out = out + str.substring(curI+1,str.indexOf('`',curI+1));
+                depth = 0;
+            }
+            index = curI+1;
+        } else {
+            index += 1;
+        }
+    }
+    if (index != str.length) {
+        out = out + str.substring(index);
+    }
+    message(out);
 }
 
 /*
