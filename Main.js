@@ -1,24 +1,13 @@
 //Main file
-/*
-things to do:
-
-*/
 let ready = false
 
 let user;
 let Console;
 let lineMax;
 
-/*
-let cutsceens = {
-    intro:[
-        [">loading...",100],
-        [">finished",1]
-    ]
-}
-*/
-
 const debug = false;
+const version = "0.1.2";
+
 
 let flags = {
     root:{
@@ -32,40 +21,141 @@ let fileExplorer = {
     current:null,
     prev:[],
 }
-
+/*
+JSPOS_TXT commands:
+prev/next, navigates the file viewer
+exit, ends the file editing session
+save, writes current file data to the temporary .crswap file
+#:*anything, writes [anything] onto line [#], fills in empty strings on intermediary lines if the new line would be outside the bounds of the current file
+#!, deletes line [#] and any empty lines between it and the next non empty line
+*/
 let fileEditor = {
     pointer:null,
     default:"JSPOS_TXT",
     current:"JSPOS_TXT",
+    run:(c) => {
+        //bootstraps the file editor
+        let FILE = null;
+        let TEXT = null;
+        let WRITER = null;
+        fileEditor.pointer.getFile().then((result) => {
+            console.log(result);
+            FILE = result;
+            FILE.text().then((rslt) => {
+                TEXT = rslt.split('\n');
+                fileEditor.pointer.createWritable().then((rslt1)=> {
+                    WRITER = rslt1;
+                    fileEditor.editors[fileEditor.current](c,FILE,TEXT,WRITER);
+                },(e) => {
+                    messageError("failed to create WRITER");
+                    return;
+                });
+            },(e) => {
+                messageError("failed to grab file text");
+                return;
+            });
+        },(e) => {
+            messageError("could not grab file");
+            return;
+        });
+    },
     editors:{
-        JSPOS_TXT:(c) => {
-            //by the time we get here, fileEditor.pointer has the file we are editing
-            //and thats all we need
-            console.log(fileEditor.pointer);
-            let exit = false;
-            let FILE = null;
-            fileEditor.pointer.getFile().then((result) => {
-                FILE = result;
-            },(e) => {
-                messageError("could not grab file");
-                exit = true;
-                return;
-            });
-            //we have a File() object in FILE of the file we want to edit
-            let WRITER = null;
-            fileEditor.pointer.createWritable().then((result) => {
-                WRITER = result;
-            },(e) => {
-                messageError("failed to make a file writer");
-                exit = true;
-                return;
-            });
-            if (exit) {
-                return;
+        JSPOS_TXT:(c,FILE,TEXT,WRITER) => {
+            //FILE contains the fileEditor.pointer.getFile() result
+            //TEXT contains the result of FILE.text()
+            //WRITER contains the FileSystemWritableFileStream of fileEditor.pointer
+
+            
+            //cursor: <span class='pulsate'>#</span>
+            let page = 1;
+            let pageMax = Math.ceil(TEXT.length/lineMax);
+            let viewPage = () => {
+                commands.clear.run("clear");
+                for (let i = 0; i < lineMax; i++) {
+                    if (((page-1) * lineMax) + i < TEXT.length) {
+                        message(TEXT[((page-1) * lineMax) + i]);
+                    } else {
+                        message("");
+                    }
+                }
+            };
+            viewPage();
+            let keepGoing = true;
+            let busy = false;
+            let saved = true;
+            
+            loop();
+            function loop() {
+                if (keepGoing) {
+                    //main loop stuff
+                    if (!busy) {
+                        busy = true;
+                        query("page " + page + "/" + pageMax + " " + FILE.name + (saved ? "" : "*"),(answer) => {
+                            if (answer == "save") {
+                                WRITER.seek(0);
+                                let data = "";
+                                for (let i = 0; i < TEXT.length; i++) {
+                                    if (i != 0 && i != TEXT.length) {
+                                        data = data + "\n";
+                                    }
+                                    data = data + TEXT[i];
+                                }
+                                WRITER.write(data);
+                                saved = true;
+                                viewPage();
+                            } else if (answer == "exit") {
+                                WRITER.close().catch((e) => {
+                                    messageError("failed to flush file data");
+                                });
+                                message("closed JSPOS_TXT");
+                                keepGoing = false;
+                            } else if (answer == "next") {
+                                page += page<pageMax ? 1 : 0;
+                                pageMax = Math.ceil(TEXT.length/lineMax);
+                                viewPage();
+                            } else if (answer == "prev") {
+                                page -= page>1 ? 1 : 0;
+                                pageMax = Math.ceil(TEXT.length/lineMax);
+                                viewPage();
+                            } else if (answer != "") {
+                                //line commands
+                                if (answer[answer.length - 1] == '!' && Number.parseInt(answer.split('!',1)) != NaN) {
+                                    TEXT[Number.parseInt(answer.split('!',1))-1] = "";
+                                    if (Number.parseInt(answer.split('!',1)) == TEXT.length) {
+                                        let min = TEXT.length - 1;
+                                        for (let i = TEXT.length - 1; i > 0; i--) {
+                                            if (TEXT[i] != "") {
+                                                break;
+                                            }
+                                            min = i;
+                                        }
+                                        TEXT.splice(min);
+                                    }
+                                    TEXT.splice(Number.parseInt(answer.split('!',1)) - 1,1)
+                                } else if (Number.parseInt(answer.split(':',1)) != NaN) {
+                                    let oldEnd = TEXT.length;
+                                    TEXT[Number.parseInt(answer.split(':',1)) - 1] = answer.substring(answer.indexOf(':')+1);
+                                    for (let i = oldEnd; i < TEXT.length; i++) {
+                                        if (TEXT[i] == undefined) {
+                                            TEXT[i] = "";
+                                        }
+                                    }
+                                    pageMax = Math.ceil(TEXT.length/lineMax);
+                                    saved = false;
+                                }
+                                viewPage();
+                            } else {
+                                viewPage();
+                            }
+                            busy = false;
+                        })
+                    }
+                    setTimeout(loop,0);
+                } else {
+                    return;
+                }
             }
-            //we now have the FILE and the WRITER!
-            message("JSPOS_TXT is still a work in progress...");
-            WRITER.close();
+            
         }
     }
 }
@@ -113,28 +203,29 @@ let commands = {
                 //list all possible commands
                 message("\u00A0");
                 message("System commands:");
-                Object.entries(commands).forEach((e) => message(e[0]));
+                let temp = [];
+                Object.entries(commands).forEach((e) => temp.push(e[0]));
+                temp.sort();
+                for (const e of temp) message(e);
             } else if (c.split(' ').length = 2) {
                 //print the help message for that command
                 message("\u00A0");
                 commands[c.split(' ')[1]].hlp();
             } else {
-                messageError("that is not valid");
+                messageError("invalid arguments");
             }
         },
         hlp:() => {
             message("help ?command");
             message("lists all commands, optionaly prints help message for specific command");
-            message("view the <a style='margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> for more info on JSPOS");
+            message("view the <a style='color:lightblue;margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> for more info on JSPOS");
         }
     },
-    
     
     clear:{
         run:(c) => {for (let i = 0; i <= lineMax; i++) {document.getElementById("line"+i).innerText = "\u00A0";}},
         hlp: () => {message("clear");message("clears the screen");}
     },
-    
     
     test:{
         run:(c) => {
@@ -147,22 +238,18 @@ let commands = {
             message("tests whatever I want it to");
         }
     },
-    
-    
-    
-    
-    
+
     root:{
         run:(c) => {
             if (flags.root.valid) {
-                query('<p style="color:yellow;margin:0px;display:inline;">WARNING: you are trying to change your root folder! are you sure?</p> y/n',(answer) => {if (answer == 'y') {flags.root.valid = false;commands.root.run("root");} else {message("cancelling")}});
+                query('`yellow`WARNING: you are trying to change your root folder! are you sure?` `white`y/n`',(answer) => {if (answer == 'y') {flags.root.valid = false;commands.root.run("root");} else {message("cancelling")}});
             } else {
                 window.showDirectoryPicker().then((dir) => {
                     flags.root.valid = true;
                     flags.root.pointer = dir;
                     fileExplorer.current = dir;
                     fileExplorer.prev = [dir];
-                    message('selected <p style="color:white;margin:0px;display:inline;">' + dir.name + '</p> as root directory');
+                    messageColors('selected `white`' + dir.name + '` as root directory');
                 }, (err) => {
                     messageError("user cancelled root file pick");
                 });
@@ -202,13 +289,13 @@ let commands = {
     
     cd:{
         run:(c) => {
+            
             if (flags.root.valid) {
                 if (c.split(' ').length == 2) {
                     switch (c.split(' ')[1]) {
                         case '~':
                             fileExplorer.current = flags.root.pointer;
                             fileExplorer.prev = [flags.root.pointer];
-                            message("current directory: " + fileExplorer.current.name);
                             break;
                         case '..':
                             if (fileExplorer.prev.length == 1) {
@@ -218,20 +305,19 @@ let commands = {
                                 fileExplorer.current = fileExplorer.prev[fileExplorer.prev.length - 1];
                                 fileExplorer.prev.pop();
                             }
-                            message("current directory: " + fileExplorer.current.name);
                             break;
                         default:
                             fileExplorer.current.getDirectoryHandle(c.split(' ')[1]).then((result) => {
                                 //found directory
                                 fileExplorer.prev[fileExplorer.prev.length] = fileExplorer.current;
                                 fileExplorer.current = result;
-                                message("current directory: " + fileExplorer.current.name);
                             },() => {
                                 //did not find directory
                                 messageError("could not find directory: " + c.split(' ')[1]);
                             });
                             break;
                     }
+                    message("current directory: " + fileExplorer.current.name);
                     
                 } else {
                     messageError("invalid arguments");
@@ -349,16 +435,18 @@ let commands = {
                 fileExplorer.current.getFileHandle(c.substring(c.indexOf(' ') + 1),{create:true}).then((result) => {
                     message("file " + c.substring(c.indexOf(' ') + 1) + " was made or already exists");
                 },(e) => {
-                    messageError("failed to create directory");
-                    messageError(e);
+                    messageError("failed to create file");
                 });
             } else {
                 messageError("no root folder selected");
-                message('try the command<p style="color:white;margin:0px;display:inline;"> root</p>');
+                messageColors('try the command `white`root`');
             }
         },
         hlp:() => {
-            
+            message("mkfile *file name");
+            message("makes a new file [file name]");
+            message("note that any file extensions (.txt, .js, etc.)");
+            message("are part of the filename");
         }
     },
     
@@ -392,7 +480,7 @@ let commands = {
             if (flags.root.valid) {
                 fileExplorer.current.getFileHandle(c.substring(c.indexOf(' ')+1)).then((result) => {
                     fileEditor.pointer = result;
-                    fileEditor.editors[fileEditor.current](c);
+                    fileEditor.run(c);
                 },(e) => {
                     messageError("could not find that file");
                 });
@@ -404,8 +492,24 @@ let commands = {
         hlp:() => {
             message("edit *filename");
             message("opens your JSPOS file editor (defaults to JSPOS_TXT editor)");
-            message("see the <a style='margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> to get more info on custom editors");
+            message("see the <a style='color:lightblue;margin:0px;display:inline' href='https://github.com/ShadowTide14/JSPseudoOS/wiki'>GitHub JSPOS wiki</a> to get more info on custom editors");
         }
+    },
+    
+    sysInfo:{
+        run:(c) => {
+            message("");
+            message("JavaScript Psuedo Operating System (JSPOS) version "+version);
+            message("File editors:");
+            for (const e of Object.keys(fileEditor.editors)) message(e);
+            message("Current Editor: " + fileEditor.current);
+            message("Default editor: " + fileEditor.default);
+        },
+        hlp:() => {
+            message("sysInfo");
+            message("displays info about your version of JSPOS");
+        }
+        
     }
 }
 
@@ -432,14 +536,16 @@ user.style.width = window.innerWidth - 24 - 8 + "px";
     
     user.addEventListener("change", handleCommand);
     
+    //intro message
+    messageColors("welcome to JSPOS `white`v" + version + "`!");
+    messageColors("you can use `white`help` to view a list of commands");
+    messageColors("and `white`help [command]` to learn more about [command]!");
+    
     ready = true;
 }
 
-//draw function
-function Main() { if(ready) {
-    
-    
-}}
+//runs every couple of frames
+function Main() {if(ready){}}
 
 /*
 references the commands dictionary to run commands
@@ -460,7 +566,6 @@ shifts all the terminal lines down one
 and inserts the message [str] into the first line
 */
 function message(str) {
-    //str = str + '\u00A0';
     for (let i = 0; i <= lineMax; i++) {
         let ref = document.getElementById("line"+i);
         if (i<lineMax) {
@@ -534,7 +639,7 @@ then waits for the user to input something,
 when they do, the callback method is called
 */
 function query(str, callback) {
-    message(str);
+    messageColors(str);
     //request user input
     let keepGoing = true;
     let answer = "";
