@@ -29,6 +29,7 @@ save, writes current file data to the temporary .crswap file
 #:*anything, writes [anything] onto line [#], fills in empty strings on intermediary lines if the new line would be outside the bounds of the current file
 #!, deletes line [#] and any empty lines between it and the next non empty line
 */
+
 let fileEditor = {
     pointer:null,
     default:"JSPOS_TXT",
@@ -39,7 +40,6 @@ let fileEditor = {
         let TEXT = null;
         let WRITER = null;
         fileEditor.pointer.getFile().then((result) => {
-            console.log(result);
             FILE = result;
             FILE.text().then((rslt) => {
                 TEXT = rslt.split('\n');
@@ -207,7 +207,7 @@ let commands = {
                 Object.entries(commands).forEach((e) => temp.push(e[0]));
                 temp.sort();
                 for (const e of temp) message(e);
-            } else if (c.split(' ').length = 2) {
+            } else if (c.split(' ').length == 2) {
                 //print the help message for that command
                 message("\u00A0");
                 commands[c.split(' ')[1]].hlp();
@@ -226,7 +226,7 @@ let commands = {
         run:(c) => {for (let i = 0; i <= lineMax; i++) {document.getElementById("line"+i).innerText = "\u00A0";}},
         hlp: () => {message("clear");message("clears the screen");}
     },
-    
+    /*
     test:{
         run:(c) => {
             query("please enter something", (answer) => {
@@ -238,6 +238,7 @@ let commands = {
             message("tests whatever I want it to");
         }
     },
+    */
 
     root:{
         run:(c) => {
@@ -258,6 +259,61 @@ let commands = {
         hlp:() => {
             message("root");
             message("opens up a directory picker, lets you pick the psuedo root folder");
+        }
+    },
+    
+    changeEditor:{
+        run:(c) => {
+            if (c == "changeEditor") {
+                fileEditor.current = fileEditor.default;
+            } else if (c.split(' ')[1] != "") {
+                let a = c.substring(1 + c.indexOf(' '));
+                if (Object.keys(fileEditor.editors).findIndex(e => e == a) != -1) {
+                    fileEditor.current = a;
+                }
+            }
+        },
+        hlp:(c) => {
+            message("changeEditor ?*[editor name]");
+            message("lets you switch what is your current editor.");
+            message("if left blank the command sets your editor to the default");
+            message("as of right now your default editor is: " + fileEditor.default);
+        }
+    },
+    
+    importEditor:{
+        run:(c) => {
+            const pickerOpts = {
+              types: [
+                {
+                  description: "JSPOS compatable file editors",
+                  accept: {
+                    "idk/*": [".txt",".js"],
+                  },
+                },
+              ],
+              excludeAcceptAllOption: true,
+              multiple: false,
+            };
+            window.showOpenFilePicker(pickerOpts).then((rslt) => {
+                //rslt[0] has the file we need to open
+                rslt[0].getFile().then((file) => {
+                    file.text().then((text) => {
+                        //really unsafe!!
+                        fileEditor.editors[rslt[0].name.split('.',1)[0]] = eval(text);
+                    }).catch((e) => {
+                        messageError("failed to grab text from file");
+                    });
+                });
+                
+            }).catch((e) => {
+                messageError("failed to open file");
+                console.log(e);
+            });
+        },
+        hlp:() => {
+            message("importEditor");
+            message("lets you select a .txt or .js file to add as an editor");
         }
     },
     
@@ -510,6 +566,16 @@ let commands = {
             message("displays info about your version of JSPOS");
         }
         
+    },
+    
+    grep:{
+        run:(c) => {
+            
+        },
+        hlp:() => {
+            message("work in progress");
+            message("does nothing right now");
+        }
     }
 }
 
