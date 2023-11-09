@@ -177,6 +177,15 @@ let commands = {
             messageColors("`crimson`crimson text` is cool, but `#FF0000`this is red`");
         }
     },
+
+    VStest:{
+        run:(c) => {
+            messageColors("helloooo~... `red`you` arent supposed to be here...");
+        },
+        hlp:() => {
+            message("boo!");
+        }
+    },
     
     verbalize:{
         run:(c) => {
